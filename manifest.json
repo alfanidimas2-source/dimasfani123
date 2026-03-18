@@ -1,0 +1,23 @@
+{
+  "name": "E-Presensi Banser",
+  "short_name": "PresensiBanser",
+  "description": "Aplikasi Laporan Presensi Anggota Banser Penggaron Kidul",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#006400",
+  "theme_color": "#006400",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "logo_ansor.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo_ansor.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
