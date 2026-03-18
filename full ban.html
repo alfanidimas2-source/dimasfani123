@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Presensi Banser</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --primary-green: #006400;
+            --secondary-green: #008000;
+            --accent-yellow: #FFD700;
+            --danger-red: #d32f2f;
+            --maps-blue: #4285F4;
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background: #e0e0e0; margin: 0; display: flex; justify-content: center; }
+        .app-container { width: 100%; max-width: 450px; background: white; min-height: 100vh; box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; overflow-x: hidden; padding-top: 60px; }
+
+        /* NAVBAR */
+        .android-navbar {
+            position: fixed; top: 0; width: 100%; max-width: 450px; height: 60px;
+            background: var(--primary-green); color: white; display: flex; align-items: center;
+            justify-content: space-between; padding: 0 15px; box-sizing: border-box; z-index: 1001;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        .navbar-title { font-size: 18px; font-weight: bold; margin-left: -30px; }
+        .navbar-icon { font-size: 20px; cursor: pointer; padding: 10px; }
+
+        /* OVERLAYS */
+        #loading-overlay, #success-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.95); z-index: 2000;
+            flex-direction: column; align-items: center; justify-content: center;
+        }
+        
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary-green); border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* ANIMASI GETAR (SHAKE) */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            50% { transform: translateX(10px); }
+            75% { transform: translateX(-10px); }
+        }
+        .shake-animation { animation: shake 0.4s ease-in-out; border: 2px solid var(--danger-red) !important; }
+
+        .success-circle {
+            width: 100px; height: 100px; background: var(--secondary-green);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            animation: popCheck 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .success-circle i { color: white; font-size: 50px; }
+        @keyframes popCheck { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+
+        /* PAGES */
+        .page { display: none; padding-bottom: 30px; animation: fadeIn 0.3s; position: relative; z-index: 1; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .top-header {
+            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
+            padding: 40px 20px 60px; color: white; border-bottom-left-radius: 30px; border-bottom-right-radius: 30px; text-align: center;
+        }
+        .logo-box {
+            width: 85px; height: 85px; background: white; border-radius: 50%; margin: 0 auto 15px;
+            display: flex; align-items: center; justify-content: center; overflow: hidden; border: 3px solid white;
+        }
+        .logo-box img { width: 80%; height: 80%; object-fit: contain; }
+
+        .auth-card { margin: -30px 20px 20px; background: rgba(255, 255, 255, 0.95); padding: 25px 20px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); backdrop-filter: blur(5px); transition: 0.3s; }
+        .input-field { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 10px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; outline: none; }
+        .btn-submit { width: 100%; background: var(--primary-green); color: white; border: none; padding: 16px; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; }
+        
+        .list-item { background: white; margin-bottom: 12px; border-radius: 15px; border-left: 6px solid var(--primary-green); padding: 15px; box-shadow: 0 3px 6px rgba(0,0,0,0.05); }
+        #map { width: 100%; height: 200px; border-radius: 15px; margin-bottom: 15px; border: 2px solid #ddd; }
+        .camera-box { width: 100%; background: #000; border-radius: 15px; overflow: hidden; margin-bottom: 15px; }
+        video { width: 100%; aspect-ratio: 4/3; object-fit: cover; }
+    </style>
+</head>
+<body onload="muatDataLogin()">
+
+<div id="loading-overlay">
+    <div class="spinner" id="loader-icon"></div>
+    <p id="loading-text" style="margin-top:20px; font-weight:bold;">Menghubungkan...</p>
+</div>
+
+<div id="success-overlay">
+    <div class="success-circle"><i class="fa-solid fa-check"></i></div>
+    <div id="success-text-msg" class="success-text" style="margin-top:20px; font-weight:bold; color:var(--primary-green);">Berhasil!</div>
+</div>
+
+<div class="android-navbar" id="main-nav" style="display: none;">
+    <i class="fa-solid fa-bars navbar-icon"></i>
+    <div class="navbar-title" id="nav-title">E-Presensi</div>
+    <i class="fa-solid fa-right-from-bracket navbar-icon" onclick="logout()"></i>
+</div>
+
+<div class="app-container">
+    <div id="page-login" class="page active">
+        <div class="top-header" style="padding-bottom: 80px;">
+            <div class="logo-box"><img src="BANSER.png"></div>
+            <h2>E-Presensi Banser</h2>
+        </div>
+        <div class="auth-card" id="login-card">
+            <input type="text" id="login-user" class="input-field" placeholder="Nama Anggota">
+            <input type="password" id="login-pass" class="input-field" placeholder="Sandi">
+            <label style="display:flex; align-items:center; gap:8px; margin-bottom:15px; font-size:14px; color:#555;">
+                <input type="checkbox" id="remember-me"> Ingatkan saya
+            </label>
+            <button class="btn-submit" onclick="cekLogin()">MASUK</button>
+            <p style="text-align:center; margin-top:15px; font-size:14px;">Anggota Baru? <b onclick="navigasi('page-daftar', 'Registrasi')" style="color:var(--secondary-green); cursor:pointer;">Daftar Disini</b></p>
+        </div>
+    </div>
+
+    <div id="page-daftar" class="page">
+        <div class="top-header"><h2>Registrasi Anggota</h2></div>
+        <div class="auth-card">
+            <input type="text" id="reg-user" class="input-field" placeholder="Nama Lengkap">
+            <input type="password" id="reg-pass" class="input-field" placeholder="Buat Sandi">
+            <button class="btn-submit" onclick="prosesDaftar()">SIMPAN AKUN</button>
+            <button onclick="navigasi('page-login')" style="width:100%; border:none; background:none; margin-top:10px; color:#666;">Kembali</button>
+        </div>
+    </div>
+
+    <div id="page-home" class="page">
+        <div class="top-header">
+            <div class="logo-box"><img src="BANSER.png"></div>
+            <p id="display-user" style="font-size: 26px; font-weight: bold; margin: 5px 0;">Sahabat</p>
+            <p style="opacity: 0.8; font-size: 13px;">Satkorkel Penggaron Kidul</p>
+        </div>
+        <div style="padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: -30px;">
+            <div class="auth-card" style="margin:0; text-align:center; cursor:pointer;" onclick="startApp()">
+                <i class="fa-solid fa-camera" style="font-size:30px; color:var(--primary-green);"></i>
+                <p style="font-weight:bold; margin-top:10px; font-size:13px;">Absen Tugas</p>
+            </div>
+            <div class="auth-card" style="margin:0; text-align:center; cursor:pointer;" onclick="bukaRiwayatTugas()">
+                <i class="fa-solid fa-list-check" style="font-size:30px; color:var(--primary-green);"></i>
+                <p style="font-weight:bold; margin-top:10px; font-size:13px;">Riwayat Tugas</p>
+            </div>
+            <div class="auth-card" style="margin:0; text-align:center; cursor:pointer;" onclick="bukaRiwayatLokasi()">
+                <i class="fa-solid fa-map-location-dot" style="font-size:30px; color:var(--primary-green);"></i>
+                <p style="font-weight:bold; margin-top:10px; font-size:13px;">Riwayat Lokasi</p>
+            </div>
+            <div class="auth-card" style="margin:0; text-align:center; cursor:pointer;" onclick="navigasi('page-pengaturan', 'Pengaturan')">
+                <i class="fa-solid fa-gear" style="font-size:30px; color:var(--primary-green);"></i>
+                <p style="font-weight:bold; margin-top:10px; font-size:13px;">Pengaturan</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="page-pengaturan" class="page">
+        <div class="top-header"><h2>Pengaturan Profil</h2></div>
+        <div class="auth-card">
+            <label style="font-size: 14px; color: #666;">Ubah Nama Lengkap:</label>
+            <input type="text" id="edit-user" class="input-field" placeholder="Nama Baru">
+            <label style="font-size: 14px; color: #666; margin-top: 10px; display: block;">Ubah Kata Sandi:</label>
+            <input type="password" id="edit-pass" class="input-field" placeholder="Sandi Baru">
+            <button class="btn-submit" onclick="updateProfil()">UPDATE PROFIL</button>
+            <button onclick="navigasi('page-home', 'E-Presensi')" style="width:100%; border:none; background:none; margin-top:15px; color:#666;">Kembali ke Home</button>
+        </div>
+    </div>
+
+    <div id="page-presensi" class="page">
+        <div style="padding: 15px;">
+            <div class="camera-box"><video id="video" autoplay playsinline></video></div>
+            <div id="map"></div>
+            <select id="jenis-kegiatan" class="input-field">
+                <option value="PAM Majelis">PAM Majelis</option>
+                <option value="PAM Lalu Lintas">PAM Lalu Lintas</option>
+                <option value="Bakti Sosial">Bakti Sosial</option>
+                <option value="Diklatsar">Diklatsar</option>
+            </select>
+            <button class="btn-submit" onclick="simpanPresensi()">KIRIM LAPORAN</button>
+            <button onclick="stopApp()" style="display:block; width:100%; border:none; background:none; margin-top:15px; color:#666;">Batal</button>
+        </div>
+    </div>
+
+    <div id="page-riwayat-tugas" class="page">
+        <div style="padding: 20px;"><div id="list-tugas"></div><button class="btn-submit" onclick="navigasi('page-home', 'E-Presensi')">KEMBALI</button></div>
+    </div>
+    <div id="page-riwayat-lokasi" class="page">
+        <div style="padding: 20px;"><div id="list-lokasi"></div><button class="btn-submit" onclick="navigasi('page-home', 'E-Presensi')">KEMBALI</button></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let userAktif = "";
+    let streamPtr = null;
+    let map = null;
+    let latSekarang = 0, lonSekarang = 0;
+
+    function navigasi(id, title) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if(title) {
+            document.getElementById('nav-title').innerText = title;
+            document.getElementById('main-nav').style.display = (id === 'page-login' || id === 'page-daftar') ? 'none' : 'flex';
+        }
+        // Isi input pengaturan otomatis saat buka halaman pengaturan
+        if(id === 'page-pengaturan') {
+            document.getElementById('edit-user').value = userAktif;
+            document.getElementById('edit-pass').value = "";
+        }
+    }
+
+    function showLoading(text, duration, callback, isError = false) {
+        const overlay = document.getElementById('loading-overlay');
+        const textElem = document.getElementById('loading-text');
+        const spinner = document.getElementById('loader-icon');
+        textElem.innerText = text;
+        textElem.style.color = isError ? "var(--danger-red)" : "var(--primary-green)";
+        spinner.style.borderTopColor = isError ? "var(--danger-red)" : "var(--primary-green)";
+        overlay.style.display = 'flex';
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            if(callback) callback();
+        }, duration);
+    }
+
+    function cekLogin() {
+        const card = document.getElementById('login-card');
+        const u = document.getElementById('login-user').value;
+        const p = document.getElementById('login-pass').value;
+        let users = JSON.parse(localStorage.getItem('banser_accounts')) || {"admin": "123"};
+        card.classList.remove('shake-animation');
+        if (users[u] === p) {
+            showLoading("Memverifikasi Sahabat...", 1500, () => {
+                userAktif = u;
+                document.getElementById('display-user').innerText = u;
+                navigasi('page-home', 'E-Presensi');
+                if (document.getElementById('remember-me').checked) {
+                    localStorage.setItem('banser_saved_user', u);
+                    localStorage.setItem('banser_saved_pass', p);
+                }
+            });
+        } else {
+            card.classList.add('shake-animation'); 
+            showLoading("Akses Ditolak!", 1000, null, true);
+            setTimeout(() => card.classList.remove('shake-animation'), 500);
+        }
+    }
+
+    function updateProfil() {
+        const newU = document.getElementById('edit-user').value;
+        const newP = document.getElementById('edit-pass').value;
+        let users = JSON.parse(localStorage.getItem('banser_accounts')) || {};
+
+        if(!newU) return alert("Nama tidak boleh kosong!");
+
+        showLoading("Menyimpan Perubahan...", 1500, () => {
+            // Hapus akun lama jika ganti nama, lalu buat baru dengan sandi baru/lama
+            const sandiLama = users[userAktif];
+            delete users[userAktif];
+            users[newU] = newP !== "" ? newP : sandiLama;
+            
+            localStorage.setItem('banser_accounts', JSON.stringify(users));
+            
+            // Update riwayat absensi agar sinkron dengan nama baru
+            let absensi = JSON.parse(localStorage.getItem('absensi_banser')) || [];
+            absensi.forEach(x => { if(x.user === userAktif) x.user = newU; });
+            localStorage.setItem('absensi_banser', JSON.stringify(absensi));
+
+            userAktif = newU;
+            document.getElementById('display-user').innerText = userAktif;
+            
+            document.getElementById('success-text-msg').innerText = "Profil Diperbarui!";
+            document.getElementById('success-overlay').style.display = 'flex';
+            setTimeout(() => {
+                document.getElementById('success-overlay').style.display = 'none';
+                navigasi('page-home', 'E-Presensi');
+            }, 1200);
+        });
+    }
+
+    function prosesDaftar() {
+        const u = document.getElementById('reg-user').value;
+        const p = document.getElementById('reg-pass').value;
+        if(!u || !p) return alert("Mohon isi lengkap!");
+        showLoading("Mendaftarkan Anggota...", 2000, () => {
+            let users = JSON.parse(localStorage.getItem('banser_accounts')) || {};
+            users[u] = p;
+            localStorage.setItem('banser_accounts', JSON.stringify(users));
+            document.getElementById('success-text-msg').innerText = "Akun Tersimpan!";
+            document.getElementById('success-overlay').style.display = 'flex';
+            setTimeout(() => {
+                document.getElementById('success-overlay').style.display = 'none';
+                navigasi('page-login');
+            }, 1200);
+        });
+    }
+
+    function muatDataLogin() {
+        const savedUser = localStorage.getItem('banser_saved_user');
+        const savedPass = localStorage.getItem('banser_saved_pass');
+        if (savedUser && savedPass) {
+            document.getElementById('login-user').value = savedUser;
+            document.getElementById('login-pass').value = savedPass;
+            document.getElementById('remember-me').checked = true;
+        }
+    }
+
+    async function startApp() {
+        navigasi('page-presensi', 'Absen Tugas');
+        try { 
+            streamPtr = await navigator.mediaDevices.getUserMedia({ video: true }); 
+            document.getElementById('video').srcObject = streamPtr; 
+        } catch(e) { alert("Izinkan kamera untuk absen!"); }
+        if (!map) {
+            map = L.map('map').setView([-6.966, 110.416], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        }
+        navigator.geolocation.getCurrentPosition(pos => {
+            latSekarang = pos.coords.latitude; lonSekarang = pos.coords.longitude;
+            map.setView([latSekarang, lonSekarang], 16);
+            L.marker([latSekarang, lonSekarang]).addTo(map);
+        });
+    }
+
+    function simpanPresensi() {
+        const k = document.getElementById('jenis-kegiatan').value;
+        const w = new Date().toLocaleString('id-ID');
+        let data = JSON.parse(localStorage.getItem('absensi_banser')) || [];
+        data.unshift({ id: Date.now(), user: userAktif, tugas: k, waktu: w, lat: latSekarang, lon: lonSekarang });
+        localStorage.setItem('absensi_banser', JSON.stringify(data));
+        document.getElementById('success-text-msg').innerText = "Laporan Terkirim!";
+        document.getElementById('success-overlay').style.display = 'flex';
+        setTimeout(() => { document.getElementById('success-overlay').style.display = 'none'; stopApp(); }, 2000);
+    }
+
+    function bukaRiwayatTugas() {
+        navigasi('page-riwayat-tugas', 'Daftar Tugas');
+        const logs = (JSON.parse(localStorage.getItem('absensi_banser')) || []).filter(x => x.user === userAktif);
+        document.getElementById('list-tugas').innerHTML = logs.length ? 
+            logs.map(i => `<div class="list-item"><b>${i.tugas}</b><br><small>${i.waktu}</small></div>`).join('') : 
+            '<p style="text-align:center; color:#999; margin-top:20px;">Belum ada riwayat tugas.</p>';
+    }
+
+    function bukaRiwayatLokasi() {
+        navigasi('page-riwayat-lokasi', 'Lokasi Maps');
+        const logs = (JSON.parse(localStorage.getItem('absensi_banser')) || []).filter(x => x.user === userAktif);
+        document.getElementById('list-lokasi').innerHTML = logs.length ? 
+            logs.map(i => `
+            <div class="list-item" style="border-left-color:var(--maps-blue)">
+                <b>Tugas: ${i.tugas}</b><br><small>${i.waktu}</small>
+                <button style="width:100%; margin-top:10px; padding:10px; background:var(--maps-blue); color:white; border:none; border-radius:10px; font-weight:bold;" 
+                onclick="window.open('https://www.google.com/maps?q=${i.lat},${i.lon}')">Buka Maps</button>
+            </div>`).join('') : '<p style="text-align:center; color:#999; margin-top:20px;">Belum ada data lokasi.</p>';
+    }
+
+    function stopApp() { if (streamPtr) streamPtr.getTracks().forEach(t => t.stop()); navigasi('page-home', 'E-Presensi'); }
+    function logout() { navigasi('page-login'); }
+</script>
+</body>
+</html>
